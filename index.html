@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Einkaufsvergleich Nord</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f5ed;color:#15362c;font:16px system-ui,sans-serif}main{max-width:1110px;margin:auto;padding:22px}header{background:#173c32;color:#fff;border-radius:25px;padding:clamp(24px,5vw,54px);margin-bottom:18px}h1{font-family:Georgia,serif;font-weight:400;font-size:clamp(38px,7vw,76px);line-height:1;margin:12px 0 18px}h2{margin:0 0 12px;font-size:22px}p{margin:8px 0 13px}section{background:white;border:1px solid #dce4d8;border-radius:19px;padding:20px;margin-bottom:16px}button,input,select{font:inherit;border:1px solid #a4b7aa;border-radius:9px;padding:8px 11px;color:inherit;background:white;min-height:42px}button{cursor:pointer}button.primary,button[aria-pressed=true]{background:#225943;color:white;border-color:#225943}input[type=number]{width:70px}input[type=checkbox]{min-height:auto}label{display:inline-flex;align-items:center;gap:7px}a{color:#235c46}form,.line,.chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.chips{margin-bottom:12px}.scroll{overflow:auto}table{width:100%;min-width:650px;border-collapse:collapse;text-align:left}th,td{padding:9px;border-bottom:1px solid #e2e9df;vertical-align:middle}th:first-child,td:first-child{position:sticky;left:0;background:white;z-index:1}td button{text-align:left;width:100%}.best{background:#d9efd5;border-color:#92b68c}small,.muted{color:#496358}small{display:block}header p{color:#e4f0dc}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:15px 0}.card{padding:13px;border-radius:12px;background:#edf3e8}.card strong{display:block;margin:5px 0}dialog{border:1px solid #a4b7aa;border-radius:16px;color:inherit;width:min(450px,92vw)}dialog::backdrop{background:#173c3266}dialog form{display:grid}dialog label{justify-content:space-between}dialog input[type=number]{width:95px}summary{cursor:pointer}#product{flex:1;min-width:160px}footer{padding:5px 4px 22px}
+#printList{display:none}
+button:disabled{opacity:.55;cursor:default}
+@media(max-width:600px){
+ main{padding:12px}section{padding:14px}.scroll table th:first-child,.scroll table td:first-child{width:126px;max-width:126px;overflow-wrap:anywhere}
+ .scroll table input[type=number]{width:60px}
+}
+@media print{
+ body{background:white;color:black;font:12pt system-ui,sans-serif}
+ main{display:none}
+ #printList{display:block}
+ #printList h1{font:700 21pt system-ui,sans-serif;margin:0 0 8pt}
+ #printList table{min-width:0;color:black}
+ #printList th,#printList td{position:static;border-bottom:1px solid #bbb;padding:8pt 5pt}
+ #printList th:first-child,#printList td:first-child{width:28pt}
+ #printList th:last-child,#printList td:last-child{width:55pt;text-align:right}
+ #printList tr{break-inside:avoid}
+ .print-box{display:inline-block;width:12pt;height:12pt;border:1px solid black}
+}
+</style>
+<main><header><b>Norderstedt · Friedrichsgabe · Henstedt-Ulzburg</b><h1>Einkaufsvergleich Nord</h1><p>ALDI Nord, REWE, Lidl und EDEKA</p></header>
+<section><div class="line" style="justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">Einkaufsliste</h2><button type="button" id="printButton" disabled>Liste drucken</button></div><div class="chips" id="favorites"></div>
+<form id="add"><input id="product" required maxlength="90" aria-label="Produkt und Packungsgröße" placeholder="Produkt und Größe, z. B. Hafermilch 1 l"><label><input id="favorite" type="checkbox">Als Favorit merken</label><button class="primary">Hinzufügen</button></form></section>
+<section><div class="line"><h2 style="margin-right:auto">Preise vergleichen</h2><label>Zeitraum <select id="range"><option value="1">Heute</option><option value="3">Heute + 2 Werktage</option></select></label></div>
+<p class="muted">Preisfeld antippen, um einen Preis pro Packung einzutragen. Im Zeitraum zählt je Zelle der niedrigste erfasste Preis. Für den gesamten Einkauf rechnet die App jeweils mit einem gemeinsamen Einkaufstag.</p>
+<label><input type="checkbox" id="includeCoupons">App- und Couponpreise einbeziehen</label><div class="scroll"><table id="prices"></table></div><div class="cards" id="plans" aria-live="polite"></div>
+<label>Mehrkosten für den zweiten Stopp <input id="trip" type="number" min="0" max="999" step=".01" value="0"> €</label></section>
+<section><h2>Filialen und Angebote</h2><p class="muted">Wähle je Händler eine Filiale. Diese Version vergleicht eingetragene Preise und ein vorab erfasstes Angebot. Aktuelle Angebote öffnest du direkt beim Händler.</p><div class="cards" id="stores"></div></section>
+<footer class="muted" id="status">Liste, Favoriten und eigene Preise werden in diesem Browser gespeichert. Preise sagen nichts über den Warenbestand aus.</footer>
+</main>
+<div id="printList" aria-hidden="true"></div>
+<dialog id="editor"><form id="priceForm"><h2 id="priceTitle"></h2><div id="recordList"></div><label>Preis je Packung (€) <input id="amount" type="number" min=".01" max="99999" step=".01" required></label><label>Gültig ab <input id="from" type="date" required></label><label>Gültig bis <input id="until" type="date" required></label><label><input id="coupon" type="checkbox">Nur mit App oder Coupon</label><button class="primary">Preis speichern</button><button type="button" id="cancel">Schließen</button></form></dialog>
+<script>
+const chains = ['ALDI Nord','REWE','Lidl','EDEKA'];
+const branches = [
+ [['af','Quickborner Str. 54 · Friedrichsgabe','https://www.aldi-nord.de/filialen-und-oeffnungszeiten/norderstedt/quickborner-strasse-54/3182792.html'],['ag','Gutenbergstr. 4a · Henstedt-Ulzburg','https://www.aldi-nord.de/filialen-und-oeffnungszeiten/filialen-und-oeffnungszeiten/henstedt-ulzburg/gutenbergstrasse-4a/3182165.html']],
+ [['rn','Ulzburger Str. 332 · Norderstedt','https://www.rewe.de/angebote/norderstedt/540548/rewe-ulzburger-str-332/'],['rh','Wilstedter Str. 63 · Henstedt-Ulzburg','https://www.rewe.de/angebote/henstedt-ulzburg/540551/rewe-wilstedter-str-63/']],
+ [['ln','Ulzburger Str. 446–454 · Norderstedt','https://www.lidl.de/s/de-DE/filialen/norderstedt/ulzburger-str-446-454/'],['lh','Am Bahnbogen 8 · Henstedt-Ulzburg','https://www.lidl.de/s/de-DE/filialen/henstedt/am-bahnbogen-8/']],
+ [['ef','Quickborner Str. 52 · Friedrichsgabe','https://www.edeka.de/maerkte/217045/'],['eh','Dammstücken 29–33 · Henstedt-Ulzburg','https://www.edeka.de/maerkte/210477/'],['en','Kohfurth 15 · Norderstedt','https://www.edeka.de/maerkte/217028/']]
+];
+const sample = 'Philadelphia Natur 195 g';
+const seed = ['rn','rh'].map(store=>({store,name:sample,price:111,start:'2026-11-16',end:'2026-11-21',source:'REWE-Angebot',coupon:false}));
+const defaults={favorites:['Milch 1 l','Eier 10 Stück','Butter 250 g','Haferflocken 500 g','Griechischer Joghurt 500 g','TK-Heidelbeeren 300 g',sample],items:[],prices:[],selected:branches.map(group=>group[0][0]),trip:0};
+let state=defaults;
+const $=id=>document.getElementById(id);
+try{state={...defaults,...JSON.parse(localStorage.getItem('einkauf-nord-v1'))}}catch{}
+const save=()=>{try{localStorage.setItem('einkauf-nord-v1',JSON.stringify(state))}catch{$('status').textContent='Dieser Browser kann die Daten gerade nur bis zum Schließen der Seite behalten.'}};
+const money=n=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(n/100);
+const dateKey=d=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+const short=d=>d.slice(8,10)+'.'+d.slice(5,7)+'.';
+const normalize=s=>s.trim().replace(/\s+/g,' ').toLocaleLowerCase('de');
+function days(){
+ const now=dateKey(new Date());
+ const date=new Date(now+'T12:00:00Z'), result=[now];
+ const year=date.getUTCFullYear();
+ const holidays=new Set();
+ for(let y=year;y<=year+1;y++){
+  for(const fixed of ['01-01','05-01','10-03','10-31','12-25','12-26']) holidays.add(y+'-'+fixed);
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4;
+  const h=(19*a+b-d-Math.floor((b-Math.floor((b+8)/25)+1)/3)+15)%30;
+  const l=(32+2*e+2*Math.floor(c/4)-h-c%4)%7, m=Math.floor((a+11*h+22*l)/451);
+  const v=h+l-7*m+114, easter=Date.UTC(y,Math.floor(v/31)-1,v%31+1,12);
+  for(const offset of [-2,1,39,50]) holidays.add(dateKey(new Date(easter+offset*86400000)));
+ }
+ while(result.length<Number($('range').value)){
+  date.setUTCDate(date.getUTCDate()+1);
+  const key=dateKey(date);
+  if(date.getUTCDay()!==0&&!holidays.has(key))result.push(key);
+ }
+ return result.filter(key=>!holidays.has(key)&&new Date(key+'T12:00:00Z').getUTCDay()!==0);
+}
+function node(tag,text,parent){const el=document.createElement(tag);if(text!==null)el.textContent=text;if(parent)parent.append(el);return el}
+function button(label,parent,fn){const el=node('button',label,parent);el.type='button';el.onclick=fn;return el}
+function records(name,store){return [...state.prices,...seed].filter(entry=>entry.store===store&&normalize(entry.name)===normalize(name))}
+function quote(item,index,dates){
+ return records(item.name,state.selected[index]).filter(entry=>(!entry.coupon||$('includeCoupons').checked)&&dates.some(day=>entry.start<=day&&day<=entry.end)).sort((a,b)=>a.price-b.price)[0];
+}
+function add(name,remember){
+ const clean=name.trim().replace(/\s+/g,' '); if(!clean)return;
+ if(!state.items.some(item=>normalize(item.name)===normalize(clean)))state.items.push({name:clean,qty:1});
+ if(remember&&!state.favorites.some(value=>normalize(value)===normalize(clean)))state.favorites.push(clean);
+ update();
+}
+function update(){save();render()}
+let active;
+function edit(item,index){
+ active={name:item.name,store:state.selected[index]};
+ $('priceTitle').textContent=item.name+' · '+chains[index];
+ $('amount').value='';$('from').value=$('until').value=dateKey(new Date());$('until').setCustomValidity('');$('coupon').checked=false;
+ const list=$('recordList');list.replaceChildren();
+ for(const entry of records(active.name,active.store)){
+  const row=node('div',null,list);row.className='line';
+  node('small',money(entry.price)+' · '+short(entry.start)+'–'+short(entry.end)+' · '+entry.source+(entry.coupon?' · App/Coupon':''),row);
+  if(entry.source==='Eigene Eingabe')button('Löschen',row,()=>{state.prices=state.prices.filter(value=>value!==entry);update();$('editor').close();edit(item,index)});
+ }
+ $('editor').showModal();
+}
+function bestPlan(combinations,dates,extra){
+ let best;
+ for(const date of dates)for(const marketIndices of combinations){
+  const lines=state.items.map(item=>{
+   const options=marketIndices.map(i=>({i,entry:quote(item,i,[date])})).filter(option=>option.entry).sort((a,b)=>a.entry.price-b.entry.price);
+   return options.length?{name:item.name,i:options[0].i,cost:options[0].entry.price*item.qty}:null;
+  });
+  if(lines.includes(null)||new Set(lines.map(line=>line.i)).size!==marketIndices.length)continue;
+  const goods=lines.reduce((sum,line)=>sum+line.cost,0),total=goods+extra;
+  if(!best||total<best.total)best={date,lines,goods,total,marketIndices};
+ }
+ return best;
+}
+function renderPrintList(){
+ const list=$('printList');
+ list.replaceChildren();
+ node('h1','Einkaufsliste',list);
+ const date=dateKey(new Date());
+ node('p',short(date)+date.slice(0,4),list);
+ if(!state.items.length){node('p','Die Einkaufsliste ist leer.',list);return}
+ const table=node('table',null,list);
+ const heading=node('tr',null,node('thead',null,table));
+ for(const title of ['Erledigt','Produkt','Menge'])node('th',title,heading).scope='col';
+ const body=node('tbody',null,table);
+ for(const item of state.items){
+  const row=node('tr',null,body);
+  node('span',null,node('td',null,row)).className='print-box';
+  node('td',item.name,row);
+  node('td',String(item.qty),row);
+ }
+}
+function render(){
+ $('printButton').disabled=!state.items.length;
+ renderPrintList();
+ const dates=days(), fav=$('favorites'), table=$('prices'), plans=$('plans'), shops=$('stores');
+ for(const el of [fav,table,plans,shops])el.replaceChildren();
+ for(const name of state.favorites){
+  const item=state.items.find(value=>normalize(value.name)===normalize(name));
+  const b=button(name,fav,()=>{if(item){state.items=state.items.filter(value=>value!==item);update()}else add(name,false)});
+  b.setAttribute('aria-pressed',String(Boolean(item)));
+ }
+ if(state.favorites.length){
+  const details=node('details',null,fav);node('summary','Favoriten verwalten',details);
+  for(const name of state.favorites)button(name+' entfernen',details,()=>{state.favorites=state.favorites.filter(value=>value!==name);update()});
+ }
+ const head=node('tr',null,node('thead',null,table));
+ for(const title of ['Produkt · Menge',...chains]){const th=node('th',title,head);th.scope='col'}
+ const body=node('tbody',null,table);
+ for(const item of state.items){
+  const row=node('tr',null,body), label=node('td',null,row);
+  node('strong',item.name,label);
+  const controls=node('div',null,label);controls.className='line';
+  const qty=node('input',null,controls);qty.type='number';qty.min=1;qty.max=999;qty.value=item.qty;qty.setAttribute('aria-label','Menge '+item.name);
+  qty.onchange=()=>{item.qty=Math.max(1,Math.min(999,Math.round(Number(qty.value)||1)));update()};
+  const remove=button('×',controls,()=>{state.items=state.items.filter(value=>value!==item);update()});remove.setAttribute('aria-label',item.name+' entfernen');
+  const prices=chains.map((_,i)=>quote(item,i,dates));
+  const lowest=Math.min(...prices.filter(Boolean).map(price=>price.price));
+  prices.forEach((price,index)=>{
+   const td=node('td',null,row);
+   const b=button(price?money(price.price*item.qty):'—',td,()=>edit(item,index));
+   b.setAttribute('aria-label',item.name+' · '+chains[index]+' · '+(price?money(price.price*item.qty):'Preis fehlt')+' · Preis bearbeiten');
+   if(price){node('small',price.source+(price.coupon?' · App/Coupon':'')+' · '+short(price.start)+'–'+short(price.end),b);if(price.price===lowest)b.className='best'}
+  });
+ }
+ if(state.items.length){
+  const row=node('tr',null,node('tfoot',null,table));node('th','Erfasste Positionen',row);
+  chains.forEach((_,i)=>{
+   const count=Math.max(0,...dates.map(date=>state.items.filter(item=>quote(item,i,[date])).length));
+   const complete=bestPlan([[i]],dates,0);
+   const cell=node('td',count+' / '+state.items.length,row);
+   if(complete)node('small',money(complete.total)+' · '+short(complete.date),cell);
+  });
+  const singles=chains.map((_,i)=>[i]), pairs=singles.flatMap(([i])=>singles.filter(([j])=>j>i).map(([j])=>[i,j]));
+  const one=bestPlan(singles,dates,0),two=bestPlan(pairs,dates,state.trip);
+  for(const [title,plan] of [['Ein Markt',one],['Zwei Märkte',two]]){
+   const card=node('div',null,plans);card.className='card';node('b',title,card);
+   if(!plan){node('p',dates.length?'Kein vollständiger Preisvergleich für einen gemeinsamen Einkaufstag.':'Heute ist kein regulärer Einkaufstag.',card);continue}
+   node('strong',money(plan.total)+' · '+short(plan.date),card);
+   for(const i of plan.marketIndices)node('small',chains[i]+': '+plan.lines.filter(line=>line.i===i).map(line=>line.name).join(', '),card);
+   if(plan===two&&state.trip)node('small','Waren '+money(plan.goods)+' + Zusatzkosten '+money(state.trip),card);
+   if(plan===two&&one)node('small',plan.total<one.total?money(one.total-plan.total)+' günstiger als ein Stopp.':plan.total>one.total?money(plan.total-one.total)+' teurer als ein Stopp.':'Gleicher Gesamtpreis wie ein Stopp.',card);
+  }
+ }else node('p','Wähle einen Favoriten oder füge ein Produkt hinzu.',plans);
+ branches.forEach((group,i)=>{
+  const card=node('div',null,shops);card.className='card';node('strong',chains[i],card);
+  const select=node('select',null,card);select.style.width='100%';select.setAttribute('aria-label','Filiale '+chains[i]);
+  for(const [id,name] of group){const option=node('option',name,select);option.value=id}
+  select.value=state.selected[i];select.onchange=()=>{state.selected[i]=select.value;update()};
+  const branch=group.find(value=>value[0]===select.value)||group[0], link=node('a','Filialseite öffnen',card);
+  link.href=branch[2];link.target='_blank';link.rel='noopener noreferrer';
+  if(i===0){const offers=node('a','ALDI-Angebote öffnen',node('p',null,card));offers.href='https://www.aldi-nord.de/de/angebote.html';offers.target='_blank';offers.rel='noopener noreferrer'}
+ });
+}
+$('add').onsubmit=e=>{e.preventDefault();add($('product').value,$('favorite').checked);e.target.reset();$('product').focus()};
+$('range').onchange=$('includeCoupons').onchange=render;
+$('trip').value=state.trip/100;
+$('trip').onchange=()=>{state.trip=Math.round(Math.max(0,Math.min(999,Number($('trip').value)||0))*100);$('trip').value=state.trip/100;update()};
+$('printButton').onclick=()=>{
+ if(!state.items.length)return;
+ renderPrintList();
+ if(typeof window.print==='function')window.print();
+};
+window.addEventListener('beforeprint',renderPrintList);
+$('cancel').onclick=()=>$('editor').close();
+$('until').oninput=$('from').oninput=()=>$('until').setCustomValidity('');
+$('priceForm').onsubmit=e=>{
+ e.preventDefault();
+ const start=$('from').value,end=$('until').value;
+ if(end<start){$('until').setCustomValidity('Das Enddatum muss am oder nach dem Startdatum liegen.');$('until').reportValidity();return}
+ const coupon=$('coupon').checked;
+ state.prices=state.prices.filter(entry=>!(entry.store===active.store&&normalize(entry.name)===normalize(active.name)&&entry.start===start&&entry.end===end&&entry.coupon===coupon));
+ state.prices.push({...active,start,end,coupon,price:Math.round(Number($('amount').value)*100),source:'Eigene Eingabe'});
+ $('editor').close();update();
+};
+render();
+window.addEventListener('focus',render);
+</script></html>
