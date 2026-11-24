@@ -6,7 +6,7 @@ Die App enthält die Filialen und Bedienung der veröffentlichten Version. Im ZI
 
 1. Lade das ZIP in die Dateien-App. Tippe auf das ZIP, um es zu entpacken.
 2. Öffne dein Repository auf GitHub. Mit einem neuen Repository namens `einkaufsvergleich-nord` und dem Standardbranch `main` passen die folgenden Schritte direkt.
-3. Gehe zu **Code → Add file → Upload files**. Lade aus dem entpackten Ordner `index.html`, `angebote.json`, `angebote-aktualisieren.mjs`, `github-pages.yml` und `README.md` hoch. Bestätige mit **Commit changes**.
+3. Gehe zu **Code → Add file → Upload files**. Lade aus dem entpackten Ordner `index.html`, `app-icon.png`, `angebote.json`, `angebote-aktualisieren.mjs`, `github-pages.yml` und `README.md` hoch. Bestätige mit **Commit changes**.
 4. Öffne im Repository die Datei `github-pages.yml` in der **Raw**-Ansicht und kopiere ihren gesamten Text. Wähle **Add file → Create new file** und gib als Namen genau `.github/workflows/pages.yml` ein. Füge den Text in den Editor ein und bestätige mit **Commit changes**. Beim Übertragen des vollständigen Ordners per Git ist der Workflow schon am richtigen Ort.
 5. Wähle im Repository **Settings → Pages** und unter **Build and deployment → Source** die Option **GitHub Actions**.
 6. Öffne **Actions → Einkaufsvergleich veröffentlichen → Run workflow** und starte den Lauf für `main`. Die fertige Webadresse findest du anschließend unter **Settings → Pages**.
@@ -21,8 +21,16 @@ Die App enthält die Filialen und Bedienung der veröffentlichten Version. Im ZI
 
 ## Sofort mit dem mitgelieferten Angebotsstand testen
 
-Lade `index.html` und `angebote.json` in die oberste Ebene des Repositorys. Wähle unter **Settings → Pages → Source** die Option **Deploy from a branch**, dann **main** und **/ (root)**. Diese Variante zeigt die mitgelieferten Daten. Für den täglichen Abruf kannst du anschließend auf **GitHub Actions** umstellen.
+Lade `index.html`, `app-icon.png` und `angebote.json` in die oberste Ebene des Repositorys. Wähle unter **Settings → Pages → Source** die Option **Deploy from a branch**, dann **main** und **/ (root)**. Diese Variante zeigt die mitgelieferten Daten. Für den täglichen Abruf kannst du anschließend auf **GitHub Actions** umstellen.
 
 ## Lokal starten
 
 Mit Python kannst du den entpackten Ordner über `python3 -m http.server 8000` bereitstellen. Öffne danach `http://localhost:8000/`. Mit Node.js 22 oder neuer kannst du `node angebote-aktualisieren.mjs` ausführen. Das erzeugt die veröffentlichbaren Dateien in `dist`.
+
+## App-Icon in einem vorhandenen Repository aktualisieren
+
+Ersetze `index.html`, `app-icon.png` und `angebote-aktualisieren.mjs` durch die Dateien aus diesem ZIP. Wenn du GitHub Actions verwendest, aktualisiere auch `.github/workflows/pages.yml` mit dem Inhalt der mitgelieferten `github-pages.yml`. Nach der Veröffentlichung öffnest du die bisherige GitHub-Pages-Adresse in Safari. Falls das vorhandene Home-Bildschirm-Symbol noch das alte Bild zeigt, kannst du die veröffentlichte Seite erneut über **Zum Home-Bildschirm** hinzufügen.
+
+## Direkt aus dem Prospekt übernehmen
+
+Öffne **Wochenangebote → Lidl**, wähle deine Filiale und tippe auf **Lidl-Prospekte blättern**. Mit dem **＋** auf der Prospektseite speicherst du den markierten Artikel bei der gewählten Filiale. Das klappt bei Artikeln mit einer von Lidl hinterlegten Position und einem Preis. Bei Aldi Nord, Edeka und REWE findest du das **＋** in der Angebotsliste.

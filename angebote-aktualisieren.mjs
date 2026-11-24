@@ -499,6 +499,7 @@ await Promise.all([mkdir(output, { recursive: true }), mkdir(new URL('./', previ
 const json = JSON.stringify(snapshots);
 await Promise.all([
   copyFile(new URL('index.html', project), new URL('index.html', output)),
+  copyFile(new URL('app-icon.png', project), new URL('app-icon.png', output)),
   writeFile(new URL('angebote.json', output), json + '\n'),
   writeFile(previousFile, json + '\n')
 ]);

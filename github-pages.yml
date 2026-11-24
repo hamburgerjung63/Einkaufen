@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - index.html
+      - app-icon.png
       - angebote.json
       - angebote-aktualisieren.mjs
       - .github/workflows/pages.yml
