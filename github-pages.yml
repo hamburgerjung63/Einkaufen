@@ -1,0 +1,54 @@
+name: Einkaufsvergleich veröffentlichen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - angebote.json
+      - angebote-aktualisieren.mjs
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  pages:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/configure-pages@v5
+      - name: Letzten Angebotsstand laden
+        uses: actions/cache/restore@v4
+        with:
+          path: .angebote-cache
+          key: angebote-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: angebote-v1-
+      - name: Angebote aktualisieren und App vorbereiten
+        run: node angebote-aktualisieren.mjs
+      - name: Angebotsstand für den nächsten Lauf speichern
+        uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: .angebote-cache
+          key: angebote-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+      - uses: actions/deploy-pages@v4
+        id: publish
