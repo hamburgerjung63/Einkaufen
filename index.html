@@ -63,10 +63,10 @@ button:disabled{opacity:.55;cursor:default}
 <div id="offerCards" class="cards"></div>
 <button type="button" id="offerMore" hidden>Mehr Angebote anzeigen</button>
 </section>
-<section><div class="line"><h2 style="margin-right:auto">Preise vergleichen</h2><label>Zeitraum <select id="range"><option value="1">Heute</option><option value="3">Heute + 2 Werktage</option></select></label></div>
+<section><details><summary><strong>Preise manuell vergleichen</strong></summary><div class="line"><label>Zeitraum <select id="range"><option value="1">Heute</option><option value="3">Heute + 2 Werktage</option></select></label></div>
 <p class="muted">Hier vergleichst du frei eingegebene Artikel und Favoriten. Preisfeld antippen, um einen Preis pro Packung einzutragen. Im Zeitraum zählt je Zelle der niedrigste erfasste Preis. Für den gesamten Einkauf rechnet die App jeweils mit einem gemeinsamen Einkaufstag.</p>
 <label><input type="checkbox" id="includeCoupons">App- und Couponpreise einbeziehen</label><div class="scroll"><table id="prices"></table></div><div class="cards" id="plans" aria-live="polite"></div>
-<label>Mehrkosten für den zweiten Stopp <input id="trip" type="number" min="0" max="999" step=".01" value="0"> €</label></section>
+<label>Mehrkosten für den zweiten Stopp <input id="trip" type="number" min="0" max="999" step=".01" value="0"> €</label></details></section>
 <section><h2>Filialen und Angebote</h2><p class="muted">Wähle je Händler eine Filiale für die Wochenangebote und den Preisvergleich.</p><div class="cards" id="stores"></div></section>
 <footer class="muted" id="status">Liste, Favoriten und eigene Preise werden in diesem Browser gespeichert. „Aktualisieren“ lädt den zuletzt veröffentlichten Angebotsstand. Preise sagen nichts über den Warenbestand aus.</footer>
 </main>
@@ -180,15 +180,78 @@ function bestPlan(combinations,dates,extra){
  }
  return best;
 }
+function productWords(value) {
+ return normalize(value).replace(/\d+(?:[.,]\d+)?\s*-?\s*(?:kg|mg|g|ml|cl|l|stück|stk\.?|er)(?=\W|$)/gu, ' ')
+  .match(/[\p{L}\p{N}]+/gu) || [];
+}
+function packSize(value) {
+ const text = normalize(value).replace(/\([^)]*=[^)]*\)/g, '');
+ const size = text.match(/(?:(\d+)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*-?\s*(kg|g|ml|cl|l|stück|stk\.?|er)(?!\p{L})/u);
+ if (!size || /\d\s*[-–]\s*$/.test(text.slice(0, size.index))) return '';
+ const [, packs, amount, unit] = size;
+ const types = {kg:['g',1000],g:['g',1],l:['ml',1000],cl:['ml',10],ml:['ml',1],stück:['stück',1],stk:['stück',1],er:['stück',1]};
+ const [base, factor] = types[unit.replace('.', '')];
+ return (packs || '1') + ':' + Number(amount.replace(',', '.')) * factor + ':' + base;
+}
+const differentProductWords = /^(?:chips|saft|milchshake|drink|smoothie|pudding|joghurt|kuchen|eis|kekse|spekulatius|aufstrich|streichfett|kräuter|knoblauch|schoko|kakao|erdbeer|salz|laktosefrei|vegan|ersatz)$/u;
+function matchFavorite(name, offer) {
+ const words = productWords(name);
+ const product = productWords(offer.name);
+ if (!words.length || !(' ' + product.join(' ') + ' ').includes(' ' + words.join(' ') + ' ')) return null;
+ if (product.some(word => differentProductWords.test(word) && !words.includes(word))) {
+  // Alternative variants can appear after “oder”; the first named product is the match.
+  const first = product.slice(0, product.indexOf('oder') < 0 ? product.length : product.indexOf('oder'));
+  if (first.some(word => differentProductWords.test(word) && !words.includes(word))) return null;
+ }
+ const size = packSize(name);
+ const advertisedSize = packSize(offer.unit || '') || packSize(offer.name);
+ if (size && size !== advertisedSize) return null;
+ return { size: advertisedSize, extraWords: product.length - words.length };
+}
+function automaticOffer(item, today) {
+ if (!state.favorites.some(name => normalize(name) === normalize(item.name))) return null;
+ const candidates = [];
+ chains.forEach((_, index) => {
+  const store = branchFor(index)[0];
+  for (const offer of offerCatalogs.get(catalogPath(index))?.offers || []) {
+   if (!offer.price || offer.start > today || offer.end < today) continue;
+   const match = matchFavorite(item.name, offer);
+   if (match) candidates.push({ ...match, offer, store });
+  }
+ });
+ candidates.sort((a,b) => Number(Boolean(a.offer.unverifiedStorePrice)) - Number(Boolean(b.offer.unverifiedStorePrice))
+  || Number(Boolean(b.size)) - Number(Boolean(a.size)) || a.extraWords - b.extraWords);
+ const first = candidates[0];
+ if (!first) return null;
+ const comparable = first.size
+  ? candidates.filter(entry => entry.size === first.size
+      && Boolean(entry.offer.unverifiedStorePrice) === Boolean(first.offer.unverifiedStorePrice))
+      .sort((a,b) => a.offer.price - b.offer.price)
+  : [first];
+ return comparable.find(entry => selectedOffer(entry.offer, entry.store)) || comparable[0];
+}
 function shoppingGroups() {
+ const byStore = new Map();
+ const today = dateKey(new Date());
+ function append(store, entry) {
+  const entries = byStore.get(store) || [];
+  entries.push(entry);
+  byStore.set(store, entries);
+ }
+ for (const item of state.offerItems) append(item.store, { item });
+ for (const item of state.items) {
+  const match = automaticOffer(item, today);
+  const existing = match && byStore.get(match.store)?.find(entry => entry.item.key === match.offer.key && !entry.favorite);
+  if (existing) existing.favorite = item;
+  else append(match?.store || '', { item, offer: match?.offer });
+ }
  const groups = [];
  branches.forEach((chainBranches, index) => {
   for (const [id, address] of chainBranches) {
-   const items = state.offerItems.filter(item => item.store === id);
-   if (items.length) groups.push({ name: chains[index], address, items, assigned: true });
+   if (byStore.has(id)) groups.push({ name: chains[index], address, items: byStore.get(id) });
   }
  });
- if (state.items.length) groups.push({ name: 'Ohne Händler', items: state.items });
+ if (byStore.has('')) groups.push({ name: 'Ohne Händler', items: byStore.get('') });
  return groups;
 }
 function offerPriceText(item, perUnit = false) {
@@ -222,31 +285,39 @@ function renderShoppingList() {
  for (const group of shoppingGroups()) {
   node('h3', group.name, list);
   if (group.address) node('small', group.address, list);
-  for (const item of group.items) {
+  for (const {item, offer, favorite} of group.items) {
+   const amount = Math.max(item.qty, favorite?.qty || 0);
+   const title = favorite?.name || item.name;
+   const done = Boolean(item.done || favorite?.done);
    const row = node('div', null, list);
    row.className = 'list-row';
-   row.dataset.done = String(Boolean(item.done));
+   row.dataset.done = String(done);
    const label = node('label', null, row);
    const check = node('input', null, label);
    check.type = 'checkbox';
-   check.checked = Boolean(item.done);
-   check.onchange = () => { item.done = check.checked; save(); row.dataset.done = String(check.checked); renderPrintList(); };
+   check.checked = done;
+   check.onchange = () => { item.done = check.checked; if (favorite) favorite.done = check.checked; save(); row.dataset.done = String(check.checked); renderPrintList(); };
    const description = node('span', null, label);
-   node('strong', item.name, description).className = 'item-name';
-   const details = itemDetails(item);
+   node('strong', title, description).className = 'item-name';
+   if (group.address) node('span', ' · ' + group.name, description);
+   if (offer && normalize(offer.name) !== normalize(item.name)) node('small', offer.name, description);
+   const details = itemDetails({ ...(offer || item), qty: amount });
    if (details) node('small', details, description);
    const qty = node('input', null, row);
    qty.type = 'number';
    qty.min = 1;
    qty.max = 999;
-   qty.value = item.qty;
-   qty.setAttribute('aria-label', 'Menge ' + item.name);
-   qty.onchange = () => setQuantity(item, qty);
+   qty.value = amount;
+   qty.setAttribute('aria-label', 'Menge ' + title);
+   qty.onchange = () => {
+    if (favorite) favorite.qty = Math.max(1, Math.min(999, Math.round(Number(qty.value) || 1)));
+    setQuantity(item, qty);
+   };
    button('×', row, () => {
-    const key = group.assigned ? 'offerItems' : 'items';
-    state[key] = state[key].filter(value => value !== item);
+    state.offerItems = state.offerItems.filter(value => value !== item);
+    state.items = state.items.filter(value => value !== item && value !== favorite);
     update();
-   }).setAttribute('aria-label', item.name + ' aus der Einkaufsliste entfernen');
+   }).setAttribute('aria-label', title + ' aus der Einkaufsliste entfernen');
   }
  }
 }
@@ -264,13 +335,15 @@ function renderPrintList(){
   const heading=node('tr',null,node('thead',null,table));
   for(const title of ['✓','Produkt','Menge'])node('th',title,heading).scope='col';
   const body=node('tbody',null,table);
-  for(const item of group.items){
+  for(const {item, offer, favorite} of group.items){
+   const amount = Math.max(item.qty, favorite?.qty || 0);
    const row=node('tr',null,body);
-   node('span',item.done?'✓':'',node('td',null,row)).className='print-box';
-   const name=node('td',item.name,row);
-   const details=itemDetails(item);
+   node('span',item.done || favorite?.done ? '✓' : '',node('td',null,row)).className='print-box';
+   const name=node('td',favorite?.name || item.name,row);
+   if (offer && normalize(offer.name) !== normalize(item.name)) node('small', offer.name, name);
+   const details=itemDetails({ ...(offer || item), qty: amount });
    if(details)node('small',details,name);
-   node('td',String(item.qty),row);
+   node('td',String(amount),row);
   }
  }
 }
@@ -281,11 +354,11 @@ let offerLimit = 24;
 const offerCatalogs = new Map();
 const loadingCatalogs = new Set();
 
-function catalogPath() {
- if (offerShop === 0) return '/api/aldi';
- if (offerShop === 1) return '/api/rewe/' + branchFor(1)[0];
- if (offerShop === 2) return '/api/lidl';
- if (offerShop === 3) return '/api/edeka/' + branchFor(3)[0];
+function catalogPath(index = offerShop) {
+ if (index === 0) return '/api/aldi';
+ if (index === 1) return '/api/rewe/' + branchFor(1)[0];
+ if (index === 2) return '/api/lidl';
+ if (index === 3) return '/api/edeka/' + branchFor(3)[0];
  return null;
 }
 function loadCurrentCatalog() {
@@ -565,11 +638,16 @@ async function fetchOffers() {
  loadingCatalogs.add(path);
  renderOfferCards();
  try {
-  const payload = (await downloadCatalogueFile())[path];
-  if (!payload) throw new Error('Angebotsdaten fehlen');
-  if (!Array.isArray(payload.offers)) throw new Error('Ungültige Angebotsdaten');
-  const catalog = payload.offers.length || payload.brochures?.length || !previous ? payload : { ...previous, source: 'snapshot' };
-  offerCatalogs.set(path, catalog);
+  const catalogue = await downloadCatalogueFile();
+  if (!Array.isArray(catalogue[path]?.offers)) throw new Error('Angebotsdaten fehlen');
+  for (const [key, payload] of Object.entries(catalogue)) {
+   if (!Array.isArray(payload?.offers)) continue;
+   const saved = offerCatalogs.get(key);
+   const catalog = payload.offers.length || payload.brochures?.length || !saved ? payload : { ...saved, source: 'snapshot' };
+   offerCatalogs.set(key, catalog);
+  }
+  renderShoppingList();
+  renderPrintList();
  } catch {
   if (previous) offerCatalogs.set(path, { ...previous, source: 'snapshot' });
  } finally {
