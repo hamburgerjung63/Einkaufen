@@ -8,7 +8,19 @@
 .shop-list{margin-top:18px}.shop-list:empty{display:none}
 .shop-list h3{margin:16px 0 4px;font-size:17px}
 .list-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border-bottom:1px solid #e2e9df;padding:8px 0}
-.list-row label{min-height:42px;align-items:flex-start}.list-row label input{margin-top:5px;accent-color:#225943}
+.item-info{display:flex;align-items:flex-start;gap:5px;min-width:0}
+.item-check{width:30px;min-height:42px;justify-content:center;flex-shrink:0}
+.item-check input{accent-color:#225943}
+.item-info > div{min-width:0;overflow-wrap:anywhere}
+.item-name{border:0;padding:0;text-align:left;font-weight:700;text-decoration:underline;text-decoration-color:#8ba598;text-underline-offset:3px}
+.shop-list h4{margin:12px 0 0;font-size:.875rem;color:#496358}
+.route-link{min-height:36px;padding:4px 8px}
+#itemEditor label{display:grid;gap:4px}#itemEditor label[hidden]{display:none}
+#itemEditor select{max-width:100%;width:100%}
+#routeOrder{padding-left:26px}
+#routeOrder li{margin-bottom:4px}
+.route-step{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.route-step button{min-width:42px}
 .list-row[data-done="true"] .item-name{text-decoration:line-through}
 .list-row small,.offer-card small{font-size:.875rem}
 .offer-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
@@ -43,6 +55,7 @@ button:disabled{opacity:.55;cursor:default}
  #printList th:first-child,#printList td:first-child{width:28pt}
  #printList th:last-child,#printList td:last-child{width:55pt;text-align:right}
  #printList tr{break-inside:avoid}
+ #printList .print-category th{text-align:left;padding:6pt 5pt 2pt}
  .print-box{display:inline-block;width:12pt;height:12pt;border:1px solid black;text-align:center;line-height:10pt}
 }
 </style>
@@ -72,6 +85,18 @@ button:disabled{opacity:.55;cursor:default}
 </main>
 <div id="printList" aria-hidden="true"></div>
 <dialog id="editor"><form id="priceForm"><h2 id="priceTitle"></h2><div id="recordList"></div><label>Preis je Packung (€) <input id="amount" type="number" min=".01" max="99999" step=".01" required></label><label>Gültig ab <input id="from" type="date" required></label><label>Gültig bis <input id="until" type="date" required></label><label><input id="coupon" type="checkbox">Nur mit App oder Coupon</label><button class="primary">Preis speichern</button><button type="button" id="cancel">Schließen</button></form></dialog>
+<dialog id="itemEditor" aria-labelledby="itemTitle"><form id="itemForm">
+<h2 id="itemTitle"></h2>
+<label id="itemStoreField">Händler <select id="itemStore"></select></label>
+<label>Warengruppe <select id="itemCategory"></select></label>
+<div class="line"><button class="primary">Speichern</button><button type="button" id="itemCancel">Abbrechen</button></div>
+</form></dialog>
+<dialog id="routeEditor" aria-labelledby="routeTitle"><form id="routeForm">
+<h2 id="routeTitle">Laufweg einstellen</h2>
+<small id="routeBranch"></small>
+<ol id="routeOrder"></ol>
+<div class="line"><button class="primary">Speichern</button><button type="button" id="routeReset">Standardreihenfolge</button><button type="button" id="routeCancel">Abbrechen</button></div>
+</form></dialog>
 <dialog id="manualOffer"><form id="manualOfferForm">
 <h2 id="manualTitle"></h2>
 <label>Artikel <input id="manualName" autofocus required maxlength="90"></label>
@@ -110,7 +135,7 @@ const branches = [
 ];
 const sample = 'Philadelphia Natur 195 g';
 const seed = ['rn','rh'].map(store=>({store,name:sample,price:111,start:'2026-11-16',end:'2026-11-21',source:'REWE-Angebot',coupon:false}));
-const defaults={favorites:['Milch 1 l','Eier 10 Stück','Butter 250 g','Haferflocken 500 g','Griechischer Joghurt 500 g','TK-Heidelbeeren 300 g',sample],items:[],offerItems:[],prices:[],selected:branches.map(group=>group[0][0]),trip:0};
+const defaults={favorites:['Milch 1 l','Eier 10 Stück','Butter 250 g','Haferflocken 500 g','Griechischer Joghurt 500 g','TK-Heidelbeeren 300 g',sample],items:[],offerItems:[],prices:[],selected:branches.map(group=>group[0][0]),trip:0,aisleOrders:{}};
 let state=defaults;
 const $=id=>document.getElementById(id);
 try{state={...defaults,...JSON.parse(localStorage.getItem('einkauf-nord-v1'))}}catch{}
@@ -212,8 +237,9 @@ function automaticOffer(item, today) {
  if (!state.favorites.some(name => normalize(name) === normalize(item.name))) return null;
  const candidates = [];
  chains.forEach((_, index) => {
-  const store = branchFor(index)[0];
-  for (const offer of offerCatalogs.get(catalogPath(index))?.offers || []) {
+  const store = item.manualStore || branchFor(index)[0];
+  if (item.manualStore && !branches[index].some(([id]) => id === store)) return;
+  for (const offer of offerCatalogs.get(catalogPath(index, store))?.offers || []) {
    if (!offer.price || offer.start > today || offer.end < today) continue;
    const match = matchFavorite(item.name, offer);
    if (match) candidates.push({ ...match, offer, store });
@@ -230,6 +256,49 @@ function automaticOffer(item, today) {
   : [first];
  return comparable.find(entry => selectedOffer(entry.offer, entry.store)) || comparable[0];
 }
+const aisleCategories = {
+ produce: 'Obst und Gemüse',
+ bakery: 'Brot und Backwaren',
+ chilled: 'Kühlregal und Eier',
+ meat: 'Fleisch, Wurst und Fisch',
+ frozen: 'Tiefkühlkost',
+ pantry: 'Vorräte und Konserven',
+ snacks: 'Süßes und Snacks',
+ drinks: 'Getränke',
+ household: 'Drogerie und Haushalt',
+ other: 'Sonstiges'
+};
+const defaultAisles = Object.keys(aisleCategories).filter(id => id !== 'other');
+const aislePatterns = [
+ ['frozen', /tiefkühl|^tk\b|pizza|fischstäbchen|speiseeis|eiscreme|\beis\b|pommes/u],
+ ['household', /waschmittel|spülmittel|spülmaschinentabs|reiniger|toilettenpapier|küchenrolle|zahnpasta|shampoo|duschgel|deo\b|seife|windeln|tierfutter/u],
+ ['drinks', /wasser|bier|\b(?:wein|weißwein|rotwein|rosé|sekt)\b|saft|smoothie|limonade|cola|schorle|säfte|getränke/u],
+ ['snacks', /schokolade|pralinen|kekse|chips|fruchtgummi|gummibär|bonbons|süßwaren|salzgebäck|popcorn/u],
+ ['bakery', /brot|brötchen|baguette|croissant|brezel|backwaren|toast|kuchen/u],
+ ['pantry', /haferflocken|müsli|nudeln|pasta|spaghetti|reis\b|linsen|kaffee|tee\b|mehl|zucker|konserven|dosen|essig|senf|speiseöl|olivenöl|rapsöl|marmelade|honig|gewürz|passierte|ketchup|soße/u],
+ ['chilled', /milch|joghurt|butter|sahne|quark|käse|kefir|skyr|philadelphia|mozzarella|frischkäse|schmand|eier|margarine|molker|kühlregal/u],
+ ['meat', /fleisch|wurst|hähnchen|hackfleisch|schnitzel|steak|schinken|lachs|fisch|salami|geflügel|garnelen/u],
+ ['produce', /obst|gemüse|banan|äpfel|apfel|birne|orange|mandarine|zitrone|beeren|trauben|kiwi|mango|avocado|kartoffel|paprika|zwiebel|knoblauch|gurke|tomate|möhren?|karotte|salat|brokkoli|zucchini|pilze|champignon|spargel/u]
+];
+function aisleOrder(store) {
+ const saved = state.aisleOrders[store] || [];
+ return [...new Set([...saved.filter(id => defaultAisles.includes(id)), ...defaultAisles])];
+}
+function aisleCategory(item, offer, favorite) {
+ const chosen = favorite?.aisleCategory || item.aisleCategory;
+ if (Object.hasOwn(aisleCategories, chosen)) return chosen;
+ const name = normalize(offer?.name || item.name);
+ const category = normalize(offer?.category || item.category || '');
+ // A catalogue's Tiefkühl category disambiguates products also sold fresh.
+ if (aislePatterns[0][1].test(category)) return 'frozen';
+ return aislePatterns.find(([, pattern]) => pattern.test(name))?.[0]
+  || aislePatterns.find(([, pattern]) => pattern.test(category))?.[0] || 'other';
+}
+function sortedAisles(items, store) {
+ const order = [...aisleOrder(store), 'other'];
+ return items.map(entry => ({ ...entry, aisle: aisleCategory(entry.item, entry.offer, entry.favorite) }))
+  .sort((a, b) => order.indexOf(a.aisle) - order.indexOf(b.aisle));
+}
 function shoppingGroups() {
  const byStore = new Map();
  const today = dateKey(new Date());
@@ -243,15 +312,15 @@ function shoppingGroups() {
   const match = automaticOffer(item, today);
   const existing = match && byStore.get(match.store)?.find(entry => entry.item.key === match.offer.key && !entry.favorite);
   if (existing) existing.favorite = item;
-  else append(match?.store || '', { item, offer: match?.offer });
+  else append(item.manualStore || match?.store || '', { item, offer: match?.offer });
  }
  const groups = [];
  branches.forEach((chainBranches, index) => {
   for (const [id, address] of chainBranches) {
-   if (byStore.has(id)) groups.push({ name: chains[index], address, items: byStore.get(id) });
+   if (byStore.has(id)) groups.push({ id, name: chains[index], address, items: sortedAisles(byStore.get(id), id) });
   }
  });
- if (byStore.has('')) groups.push({ name: 'Ohne Händler', items: byStore.get('') });
+ if (byStore.has('')) groups.push({ name: 'Ohne Händler', items: sortedAisles(byStore.get(''), '') });
  return groups;
 }
 function offerPriceText(item, perUnit = false) {
@@ -279,27 +348,118 @@ function setQuantity(item, input) {
  item.qty = Math.max(1, Math.min(999, Math.round(Number(input.value) || 1)));
  update();
 }
+let editingItem;
+function openItemEditor(item, offer, favorite) {
+ const regular = favorite || (state.items.includes(item) ? item : null);
+ editingItem = { item, favorite, regular };
+ $('itemTitle').textContent = (favorite || item).name;
+ $('itemStoreField').hidden = !regular;
+ const storeSelect = $('itemStore');
+ storeSelect.replaceChildren();
+ node('option', 'Automatisch nach Angebot', storeSelect).value = '';
+ chains.forEach((chain, index) => {
+  const group = node('optgroup', null, storeSelect);
+  group.label = chain;
+  for (const [id, address] of branches[index]) node('option', chain + ' · ' + address, group).value = id;
+ });
+ storeSelect.value = regular?.manualStore || '';
+ const categorySelect = $('itemCategory');
+ categorySelect.replaceChildren();
+ const automatic = aisleCategory({ ...item, aisleCategory: undefined }, offer);
+ node('option', 'Automatisch · ' + aisleCategories[automatic], categorySelect).value = '';
+ for (const [id, label] of Object.entries(aisleCategories)) node('option', label, categorySelect).value = id;
+ categorySelect.value = favorite?.aisleCategory || item.aisleCategory || '';
+ $('itemEditor').showModal();
+}
+$('itemForm').onsubmit = event => {
+ event.preventDefault();
+ const { item, favorite, regular } = editingItem;
+ if (regular) {
+  if ($('itemStore').value) regular.manualStore = $('itemStore').value;
+  else delete regular.manualStore;
+ }
+ const categoryItem = favorite || item;
+ if ($('itemCategory').value) categoryItem.aisleCategory = $('itemCategory').value;
+ else delete categoryItem.aisleCategory;
+ $('itemEditor').close();
+ update();
+};
+$('itemCancel').onclick = () => $('itemEditor').close();
+
+let routeStore, routeDraft;
+function renderRouteOrder(focusId, focusDirection) {
+ const list = $('routeOrder');
+ list.replaceChildren();
+ routeDraft.forEach((id, index) => {
+  const step = node('div', null, node('li', null, list));
+  step.className = 'route-step';
+  node('span', aisleCategories[id], step);
+  const controls = node('div', null, step);
+  for (const [direction, icon, label] of [[-1, '↑', 'nach oben'], [1, '↓', 'nach unten']]) {
+   const next = index + direction;
+   const control = button(icon, controls, () => {
+    [routeDraft[index], routeDraft[next]] = [routeDraft[next], routeDraft[index]];
+    renderRouteOrder(id, next + direction < 0 || next + direction >= routeDraft.length ? -direction : direction);
+   });
+   control.disabled = next < 0 || next >= routeDraft.length;
+   control.setAttribute('aria-label', aisleCategories[id] + ' ' + label);
+   if (focusId === id && focusDirection === direction) control.focus();
+  }
+ });
+}
+function openRouteEditor(id, name, address) {
+ routeStore = id;
+ routeDraft = aisleOrder(id);
+ $('routeBranch').textContent = name + ' · ' + address;
+ renderRouteOrder();
+ $('routeEditor').showModal();
+}
+$('routeForm').onsubmit = event => {
+ event.preventDefault();
+ state.aisleOrders[routeStore] = routeDraft;
+ $('routeEditor').close();
+ update();
+};
+$('routeCancel').onclick = () => $('routeEditor').close();
+$('routeReset').onclick = () => {
+ routeDraft = [...defaultAisles];
+ renderRouteOrder();
+};
+
 function renderShoppingList() {
  const list = $('shoppingGroups');
  list.replaceChildren();
  for (const group of shoppingGroups()) {
   node('h3', group.name, list);
-  if (group.address) node('small', group.address, list);
-  for (const {item, offer, favorite} of group.items) {
+  if (group.address) {
+   const heading = node('div', null, list);
+   heading.className = 'line';
+   node('small', group.address, heading);
+   button('Laufweg einstellen', heading, () => openRouteEditor(group.id, group.name, group.address)).className = 'route-link';
+  }
+  let previousAisle;
+  for (const {item, offer, favorite, aisle} of group.items) {
+   if (aisle !== previousAisle) node('h4', aisleCategories[aisle], list);
+   previousAisle = aisle;
    const amount = Math.max(item.qty, favorite?.qty || 0);
    const title = favorite?.name || item.name;
    const done = Boolean(item.done || favorite?.done);
    const row = node('div', null, list);
    row.className = 'list-row';
    row.dataset.done = String(done);
-   const label = node('label', null, row);
+   const info = node('div', null, row);
+   info.className = 'item-info';
+   const label = node('label', null, info);
+   label.className = 'item-check';
    const check = node('input', null, label);
+   check.setAttribute('aria-label', title + ' abhaken');
    check.type = 'checkbox';
    check.checked = done;
    check.onchange = () => { item.done = check.checked; if (favorite) favorite.done = check.checked; save(); row.dataset.done = String(check.checked); renderPrintList(); };
-   const description = node('span', null, label);
-   node('strong', title, description).className = 'item-name';
-   if (group.address) node('span', ' · ' + group.name, description);
+   const description = node('div', null, info);
+   const edit = button(title + (group.address ? ' · ' + group.name : ''), description, () => openItemEditor(item, offer, favorite));
+   edit.className = 'item-name';
+   edit.setAttribute('aria-label', title + ' bearbeiten' + (group.address ? ' · ' + group.name : ''));
    if (offer && normalize(offer.name) !== normalize(item.name)) node('small', offer.name, description);
    const details = itemDetails({ ...(offer || item), qty: amount });
    if (details) node('small', details, description);
@@ -335,7 +495,15 @@ function renderPrintList(){
   const heading=node('tr',null,node('thead',null,table));
   for(const title of ['✓','Produkt','Menge'])node('th',title,heading).scope='col';
   const body=node('tbody',null,table);
-  for(const {item, offer, favorite} of group.items){
+  let previousAisle;
+  for(const {item, offer, favorite, aisle} of group.items){
+   if (aisle !== previousAisle) {
+    const categoryRow = node('tr', null, body);
+    categoryRow.className = 'print-category';
+    const heading = node('th', aisleCategories[aisle], categoryRow);
+    heading.colSpan = 3;
+   }
+   previousAisle = aisle;
    const amount = Math.max(item.qty, favorite?.qty || 0);
    const row=node('tr',null,body);
    node('span',item.done || favorite?.done ? '✓' : '',node('td',null,row)).className='print-box';
@@ -354,11 +522,11 @@ let offerLimit = 24;
 const offerCatalogs = new Map();
 const loadingCatalogs = new Set();
 
-function catalogPath(index = offerShop) {
+function catalogPath(index = offerShop, store = branches[index] && branchFor(index)[0]) {
  if (index === 0) return '/api/aldi';
- if (index === 1) return '/api/rewe/' + branchFor(1)[0];
+ if (index === 1) return '/api/rewe/' + store;
  if (index === 2) return '/api/lidl';
- if (index === 3) return '/api/edeka/' + branchFor(3)[0];
+ if (index === 3) return '/api/edeka/' + store;
  return null;
 }
 function loadCurrentCatalog() {
@@ -714,6 +882,7 @@ function render(){
   const select=branchSelect(i,card);select.style.width='100%';
   const branch=branchFor(i), link=node('a','Filialseite öffnen',card);
   link.href=branch[2];link.target='_blank';link.rel='noopener noreferrer';
+  button('Laufweg einstellen', node('div', null, card), () => openRouteEditor(branch[0], chains[i], branch[1])).className = 'route-link';
   if(i===0){const offers=node('a','ALDI-Angebote öffnen',node('p',null,card));offers.href='https://www.aldi-nord.de/de/angebote.html';offers.target='_blank';offers.rel='noopener noreferrer'}
  });
 }
