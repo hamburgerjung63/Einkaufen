@@ -6,6 +6,10 @@
 *{box-sizing:border-box}body{margin:0;background:#f4f5ed;color:#15362c;font:16px system-ui,sans-serif}main{max-width:1110px;margin:auto;padding:22px}header{background:#173c32;color:#fff;border-radius:25px;padding:clamp(24px,5vw,54px);margin-bottom:18px}h1{font-family:Georgia,serif;font-weight:400;font-size:clamp(38px,7vw,76px);line-height:1;margin:12px 0 18px}h2{margin:0 0 12px;font-size:22px}p{margin:8px 0 13px}section{background:white;border:1px solid #dce4d8;border-radius:19px;padding:20px;margin-bottom:16px}button,input,select{font:inherit;border:1px solid #a4b7aa;border-radius:9px;padding:8px 11px;color:inherit;background:white;min-height:42px}button{cursor:pointer}button.primary,button[aria-pressed=true]{background:#225943;color:white;border-color:#225943}input[type=number]{width:70px}input[type=checkbox]{min-height:auto}label{display:inline-flex;align-items:center;gap:7px}a{color:#235c46}form,.line,.chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.chips{margin-bottom:12px}.scroll{overflow:auto}table{width:100%;min-width:650px;border-collapse:collapse;text-align:left}th,td{padding:9px;border-bottom:1px solid #e2e9df;vertical-align:middle}th:first-child,td:first-child{position:sticky;left:0;background:white;z-index:1}td button{text-align:left;width:100%}.best{background:#d9efd5;border-color:#92b68c}small,.muted{color:#496358}small{display:block}header p{color:#e4f0dc}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:15px 0}.card{padding:13px;border-radius:12px;background:#edf3e8}.card strong{display:block;margin:5px 0}dialog{border:1px solid #a4b7aa;border-radius:16px;color:inherit;width:min(450px,92vw)}dialog::backdrop{background:#173c3266}dialog form{display:grid}dialog label{justify-content:space-between}dialog input[type=number]{width:95px}summary{cursor:pointer}#product{flex:1;min-width:160px}footer{padding:5px 4px 22px}
 #printList{display:none}
 .shop-list{margin-top:18px}.shop-list:empty{display:none}
+#favorites:not(:empty){margin-bottom:16px}
+#favorites h3{margin:0 0 8px;font-size:17px}
+#favorites h4{margin:0 0 4px;font-size:.875rem;color:#496358}
+#favorites button{overflow-wrap:anywhere;max-width:100%}
 .shop-list h3{margin:16px 0 4px;font-size:17px}
 .list-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border-bottom:1px solid #e2e9df;padding:8px 0}
 .item-info{display:flex;align-items:flex-start;gap:5px;min-width:0}
@@ -60,7 +64,7 @@ button:disabled{opacity:.55;cursor:default}
 }
 </style>
 <main><header><b>Norderstedt · Friedrichsgabe · Henstedt-Ulzburg</b><h1>Einkaufsvergleich Nord</h1><p>ALDI Nord, REWE, Lidl und EDEKA</p></header>
-<section><div class="line" style="justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">Einkaufsliste</h2><button type="button" id="printButton" disabled>Liste drucken</button></div><div class="chips" id="favorites"></div>
+<section><div class="line" style="justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">Einkaufsliste</h2><button type="button" id="printButton" disabled>Liste drucken</button></div><div id="favorites"></div>
 <form id="add"><input id="product" required maxlength="90" aria-label="Produkt und Packungsgröße" placeholder="Produkt und Größe, z. B. Hafermilch 1 l"><label><input id="favorite" type="checkbox">Als Favorit merken</label><button class="primary">Hinzufügen</button></form><div id="shoppingGroups" class="shop-list"></div></section>
 <section aria-labelledby="offersHeading">
 <div class="line" style="justify-content:space-between"><h2 id="offersHeading" style="margin:0">Wochenangebote</h2><a href="#printButton">Zur Einkaufsliste</a></div>
@@ -220,7 +224,7 @@ function packSize(value) {
  return (packs || '1') + ':' + Number(amount.replace(',', '.')) * factor + ':' + base;
 }
 const differentProductWords = /^(?:chips|saft|milchshake|drink|smoothie|pudding|joghurt|kuchen|eis|kekse|spekulatius|aufstrich|streichfett|kräuter|knoblauch|schoko|kakao|erdbeer|salz|laktosefrei|vegan|ersatz)$/u;
-function matchFavorite(name, offer) {
+function matchProduct(name, offer) {
  const words = productWords(name);
  const product = productWords(offer.name);
  if (!words.length || !(' ' + product.join(' ') + ' ').includes(' ' + words.join(' ') + ' ')) return null;
@@ -235,14 +239,14 @@ function matchFavorite(name, offer) {
  return { size: advertisedSize, extraWords: product.length - words.length };
 }
 function automaticOffer(item, today) {
- if (item.regularPurchase || !state.favorites.some(name => normalize(name) === normalize(item.name))) return null;
+ if (item.regularPurchase) return null;
  const candidates = [];
  chains.forEach((_, index) => {
   const store = item.manualStore || branchFor(index)[0];
   if (item.manualStore && !branches[index].some(([id]) => id === store)) return;
   for (const offer of offerCatalogs.get(catalogPath(index, store))?.offers || []) {
    if (!offer.price || offer.start > today || offer.end < today) continue;
-   const match = matchFavorite(item.name, offer);
+   const match = matchProduct(item.name, offer);
    if (match) candidates.push({ ...match, offer, store });
   }
  });
@@ -279,7 +283,7 @@ const aislePatterns = [
  ['pantry', /haferflocken|müsli|nudeln|pasta|spaghetti|reis\b|linsen|kaffee|tee\b|mehl|zucker|konserven|dosen|essig|senf|speiseöl|olivenöl|rapsöl|marmelade|honig|gewürz|passierte|ketchup|soße/u],
  ['chilled', /milch|joghurt|butter|sahne|quark|käse|kefir|skyr|philadelphia|mozzarella|frischkäse|schmand|eier|margarine|molker|kühlregal/u],
  ['meat', /fleisch|wurst|hähnchen|hackfleisch|schnitzel|steak|schinken|lachs|fisch|salami|geflügel|garnelen/u],
- ['produce', /obst|gemüse|banan|äpfel|apfel|birne|orange|mandarine|zitrone|beeren|trauben|kiwi|mango|avocado|kartoffel|paprika|zwiebel|knoblauch|gurke|tomate|möhren?|karotte|salat|brokkoli|zucchini|pilze|champignon|spargel/u]
+ ['produce', /obst|gemüse|banan|äpfel|apfel|birne|orange|mandarine|zitrone|beeren|trauben|kiwi|mango|avocado|kartoffel|paprika|zwiebel|knoblauch|ingwer|gurke|tomate|möhren?|karotte|salat|brokkoli|zucchini|pilze|champignon|spargel/u]
 ];
 function aisleOrder(store) {
  const saved = state.aisleOrders[store] || [];
@@ -844,6 +848,37 @@ async function fetchOffers() {
   if (path === catalogPath()) renderOfferCards();
  }
 }
+function renderFavorites(container) {
+ if (!state.favorites.length) return;
+ node('h3', 'Favoriten', container);
+ const favorites = state.favorites.map(name => ({ item: { name } }));
+ const sorted = sortedAisles(favorites, '');
+ let previousAisle, chips;
+ for (const { item: { name }, aisle } of sorted) {
+  if (aisle !== previousAisle) {
+   node('h4', aisleCategories[aisle], container);
+   chips = node('div', null, container);
+   chips.className = 'chips';
+   previousAisle = aisle;
+  }
+  const item = state.items.find(value => normalize(value.name) === normalize(name));
+  const control = button(name, chips, () => {
+   if (item) {
+    state.items = state.items.filter(value => value !== item);
+    update();
+   } else add(name, false);
+  });
+  control.setAttribute('aria-pressed', String(Boolean(item)));
+ }
+ const details = node('details', null, container);
+ node('summary', 'Favoriten verwalten', details);
+ for (const { item: { name } } of sorted) {
+  button(name + ' entfernen', details, () => {
+   state.favorites = state.favorites.filter(value => value !== name);
+   update();
+  });
+ }
+}
 function render(){
  $('printButton').disabled=!hasItems();
  renderShoppingList();
@@ -851,15 +886,7 @@ function render(){
  renderOffers();
  const dates=days(), fav=$('favorites'), table=$('prices'), plans=$('plans'), shops=$('stores');
  for(const el of [fav,table,plans,shops])el.replaceChildren();
- for(const name of state.favorites){
-  const item=state.items.find(value=>normalize(value.name)===normalize(name));
-  const b=button(name,fav,()=>{if(item){state.items=state.items.filter(value=>value!==item);update()}else add(name,false)});
-  b.setAttribute('aria-pressed',String(Boolean(item)));
- }
- if(state.favorites.length){
-  const details=node('details',null,fav);node('summary','Favoriten verwalten',details);
-  for(const name of state.favorites)button(name+' entfernen',details,()=>{state.favorites=state.favorites.filter(value=>value!==name);update()});
- }
+ renderFavorites(fav);
  const head=node('tr',null,node('thead',null,table));
  for(const title of ['Produkt · Menge',...chains]){const th=node('th',title,head);th.scope='col'}
  const body=node('tbody',null,table);
