@@ -15,7 +15,7 @@
 .item-name{border:0;padding:0;text-align:left;font-weight:700;text-decoration:underline;text-decoration-color:#8ba598;text-underline-offset:3px}
 .shop-list h4{margin:12px 0 0;font-size:.875rem;color:#496358}
 .route-link{min-height:36px;padding:4px 8px}
-#itemEditor label{display:grid;gap:4px}#itemEditor label[hidden]{display:none}
+#itemEditor label{display:grid;gap:4px}#itemStoreHint[hidden]{display:none}
 #itemEditor select{max-width:100%;width:100%}
 #routeOrder{padding-left:26px}
 #routeOrder li{margin-bottom:4px}
@@ -87,7 +87,8 @@ button:disabled{opacity:.55;cursor:default}
 <dialog id="editor"><form id="priceForm"><h2 id="priceTitle"></h2><div id="recordList"></div><label>Preis je Packung (€) <input id="amount" type="number" min=".01" max="99999" step=".01" required></label><label>Gültig ab <input id="from" type="date" required></label><label>Gültig bis <input id="until" type="date" required></label><label><input id="coupon" type="checkbox">Nur mit App oder Coupon</label><button class="primary">Preis speichern</button><button type="button" id="cancel">Schließen</button></form></dialog>
 <dialog id="itemEditor" aria-labelledby="itemTitle"><form id="itemForm">
 <h2 id="itemTitle"></h2>
-<label id="itemStoreField">Händler <select id="itemStore"></select></label>
+<label>Händler <select id="itemStore"></select></label>
+<small id="itemStoreHint" hidden>Beim Wechsel der Filiale wird der Artikel ohne Angebotsdaten übernommen.</small>
 <label>Warengruppe <select id="itemCategory"></select></label>
 <div class="line"><button class="primary">Speichern</button><button type="button" id="itemCancel">Abbrechen</button></div>
 </form></dialog>
@@ -234,7 +235,7 @@ function matchFavorite(name, offer) {
  return { size: advertisedSize, extraWords: product.length - words.length };
 }
 function automaticOffer(item, today) {
- if (!state.favorites.some(name => normalize(name) === normalize(item.name))) return null;
+ if (item.regularPurchase || !state.favorites.some(name => normalize(name) === normalize(item.name))) return null;
  const candidates = [];
  chains.forEach((_, index) => {
   const store = item.manualStore || branchFor(index)[0];
@@ -349,20 +350,20 @@ function setQuantity(item, input) {
  update();
 }
 let editingItem;
-function openItemEditor(item, offer, favorite) {
- const regular = favorite || (state.items.includes(item) ? item : null);
- editingItem = { item, favorite, regular };
+function openItemEditor(item, offer, favorite, store) {
+ const sourceStore = state.offerItems.includes(item) ? item.store : '';
+ editingItem = { item, favorite, sourceStore, automaticStore: offer ? store : undefined };
  $('itemTitle').textContent = (favorite || item).name;
- $('itemStoreField').hidden = !regular;
+ $('itemStoreHint').hidden = !sourceStore && !offer;
  const storeSelect = $('itemStore');
  storeSelect.replaceChildren();
- node('option', 'Automatisch nach Angebot', storeSelect).value = '';
+ if (!sourceStore || favorite) node('option', 'Automatisch nach Angebot', storeSelect).value = '';
  chains.forEach((chain, index) => {
   const group = node('optgroup', null, storeSelect);
   group.label = chain;
   for (const [id, address] of branches[index]) node('option', chain + ' · ' + address, group).value = id;
  });
- storeSelect.value = regular?.manualStore || '';
+ storeSelect.value = favorite ? favorite.manualStore || '' : sourceStore || item.manualStore || '';
  const categorySelect = $('itemCategory');
  categorySelect.replaceChildren();
  const automatic = aisleCategory({ ...item, aisleCategory: undefined }, offer);
@@ -371,14 +372,34 @@ function openItemEditor(item, offer, favorite) {
  categorySelect.value = favorite?.aisleCategory || item.aisleCategory || '';
  $('itemEditor').showModal();
 }
+function moveOfferToStore(item, favorite, store) {
+ const purchase = favorite || { name: item.name };
+ purchase.qty = Math.max(item.qty, favorite?.qty || 0);
+ purchase.done = Boolean(item.done || favorite?.done);
+ purchase.manualStore = store;
+ purchase.regularPurchase = true;
+ if (item.unit) purchase.unit = item.unit;
+ if (item.category) purchase.category = item.category;
+ state.offerItems = state.offerItems.filter(value => value !== item);
+ if (!favorite) state.items.push(purchase);
+ return purchase;
+}
 $('itemForm').onsubmit = event => {
  event.preventDefault();
- const { item, favorite, regular } = editingItem;
- if (regular) {
-  if ($('itemStore').value) regular.manualStore = $('itemStore').value;
-  else delete regular.manualStore;
+ const { item, favorite, sourceStore, automaticStore } = editingItem;
+ const store = $('itemStore').value;
+ let categoryItem = favorite || item;
+ if (sourceStore && store && store !== sourceStore) {
+  categoryItem = moveOfferToStore(item, favorite, store);
+ } else if (!sourceStore || favorite) {
+  if (store) {
+   categoryItem.manualStore = store;
+   if (automaticStore && automaticStore !== store) categoryItem.regularPurchase = true;
+  } else {
+   delete categoryItem.manualStore;
+   delete categoryItem.regularPurchase;
+  }
  }
- const categoryItem = favorite || item;
  if ($('itemCategory').value) categoryItem.aisleCategory = $('itemCategory').value;
  else delete categoryItem.aisleCategory;
  $('itemEditor').close();
@@ -457,7 +478,7 @@ function renderShoppingList() {
    check.checked = done;
    check.onchange = () => { item.done = check.checked; if (favorite) favorite.done = check.checked; save(); row.dataset.done = String(check.checked); renderPrintList(); };
    const description = node('div', null, info);
-   const edit = button(title + (group.address ? ' · ' + group.name : ''), description, () => openItemEditor(item, offer, favorite));
+   const edit = button(title + (group.address ? ' · ' + group.name : ''), description, () => openItemEditor(item, offer, favorite, group.id));
    edit.className = 'item-name';
    edit.setAttribute('aria-label', title + ' bearbeiten' + (group.address ? ' · ' + group.name : ''));
    if (offer && normalize(offer.name) !== normalize(item.name)) node('small', offer.name, description);
